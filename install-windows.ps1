@@ -1,7 +1,7 @@
 ﻿<#
 ================================================================================
  Claude 1M Context Unlock  -  Windows installer (PowerShell 5.1+)
- v1.0.0
+ v1.1.0
 
  解除 Claude 桌面端把上下文强行截回 200k 的限制, 恢复模型本应有的 1M 上下文。
  Unlock the full 1M context window that the Claude desktop app silently caps to 200k.
@@ -15,11 +15,17 @@
      1) ~/.claude/settings.json 的 env 块 (启动时合并进 process.env, 桌面版/CLI 都生效)
      2) 用户级环境变量 (兜底, 覆盖从终端启动的进程)
 
+   v1.1.0 新增: 细粒度选项, 你可以选择只写 settings.json (只解锁桌面版), 或只写
+   用户环境变量 (只解锁终端). 仍推荐两层都写, 互为兜底.
+
    A newer desktop build gates 1M behind longContext1mCreditsBlocked and forces it
    back to 200k. There is a higher-priority override path: when DISABLE_COMPACT is
    truthy AND CLAUDE_CODE_MAX_CONTEXT_TOKENS has a value, the client returns that
    value before the gate is ever reached. This tool writes BOTH keys (both required)
    into settings.json's env block plus user env vars.
+
+   v1.1.0 adds fine-grained options: settings-only (desktop only) or env-only
+   (terminal only). Both layers (the default) is still recommended.
 
  副作用 / SIDE EFFECT (重要 / important):
    DISABLE_COMPACT=1 会彻底关闭 auto-compact。上下文满了不再自动总结,
@@ -32,7 +38,15 @@
    或 / or:  powershell -ExecutionPolicy Bypass -File install-windows.ps1
    非交互 / non-interactive (for AI agents):
      powershell -NoProfile -ExecutionPolicy Bypass -File install-windows.ps1 -Action install
-     (Action 可选 / one of: install | status | rollback)
+     (Action 可选 / one of:
+        install              两层都写 / both layers (recommended)
+        install-settings     只写 settings.json / settings.json only
+        install-env          只写用户环境变量 / user env vars only
+        status               查看状态 / show state
+        rollback             两层都回滚 / rollback both
+        rollback-settings    只回滚 settings.json / rollback settings.json only
+        rollback-env         只回滚用户环境变量 / rollback user env vars only
+     )
    测试 / testing:  ... install-windows.ps1 -DryRun   (只打印, 不写盘)
 
  不需要管理员权限, 不需要 Node.js。
@@ -42,11 +56,11 @@
 
 param(
     [switch]$DryRun,
-    [ValidateSet("install","status","rollback","")]
+    [ValidateSet("install","install-settings","install-env","status","rollback","rollback-settings","rollback-env","")]
     [string]$Action = ""
 )
 
-$VERSION   = "v1.0.0"
+$VERSION   = "v1.1.0"
 $VAR_CTX   = "CLAUDE_CODE_MAX_CONTEXT_TOKENS"
 $VAR_NOCMP = "DISABLE_COMPACT"
 $VAL_CTX   = "1000000"
@@ -155,64 +169,56 @@ function Get-UserEnv {
     return [Environment]::GetEnvironmentVariable($Name, "User")
 }
 
-# ============================ 动作 / ACTIONS ============================
+# ============================ 原子操作 / ATOMIC HELPERS ============================
 
-function Action-Install {
-    Write-Host ""
-    Write-Host ">>> 解锁 1M 上下文 / Unlocking 1M context ..." -ForegroundColor Cyan
-
+# 写两个键进 settings.json (备份在外面做; 不在这里做)
+function Write-SettingsKeys {
     $obj = Ensure-SettingsObject
-    Backup-Settings $SettingsPath
-
     $env = Ensure-EnvBlock $obj
-    # 两个键缺一不可, 一起写
     Add-Member -InputObject $env -MemberType NoteProperty -Name $VAR_CTX   -Value $VAL_CTX   -Force
     Add-Member -InputObject $env -MemberType NoteProperty -Name $VAR_NOCMP -Value $VAL_NOCMP -Force
-
     $json = $obj | ConvertTo-Json -Depth 10
     Write-JsonFile -Path $SettingsPath -Content $json
     Write-Host "[OK] settings.json 已更新 / updated:" -ForegroundColor Green
     Write-Host "       $VAR_CTX = $VAL_CTX" -ForegroundColor Green
     Write-Host "       $VAR_NOCMP = $VAL_NOCMP" -ForegroundColor Green
+}
 
-    # 第二层: 用户环境变量 (两个键都设)
+# 删 settings.json 里的两个键; 返回 $true 表示真的删了点东西
+function Remove-SettingsKeys {
+    if (-not (Test-Path $SettingsPath)) {
+        Write-Host "[--] settings.json 不存在, 无需处理。" -ForegroundColor DarkGray
+        return $false
+    }
+    $obj = Read-Settings $SettingsPath
+    if (-not (Has-Prop $obj "env")) {
+        Write-Host "[--] settings.json 无 env 块, 无需处理。" -ForegroundColor DarkGray
+        return $false
+    }
+    $removed = $false
+    foreach ($k in @($VAR_CTX, $VAR_NOCMP)) {
+        if (Has-Prop $obj.env $k) {
+            $obj.env.PSObject.Properties.Remove($k)
+            Write-Host "[OK] 已从 settings.json 删除 $k。" -ForegroundColor Green
+            $removed = $true
+        }
+    }
+    if ($removed) {
+        $json = $obj | ConvertTo-Json -Depth 10
+        Write-JsonFile -Path $SettingsPath -Content $json
+    } else {
+        Write-Host "[--] settings.json 里本就没有这两个键。" -ForegroundColor DarkGray
+    }
+    return $removed
+}
+
+function Write-UserEnvKeys {
     Set-UserEnv $VAR_CTX   $VAL_CTX
     Set-UserEnv $VAR_NOCMP $VAL_NOCMP
     Write-Host "[OK] 用户环境变量已设 / User env vars set ($VAR_CTX, $VAR_NOCMP)。" -ForegroundColor Green
-
-    Show-NextSteps
-    Show-Caveat
 }
 
-function Action-Rollback {
-    Write-Host ""
-    Write-Host ">>> 回滚 / Rolling back ..." -ForegroundColor Cyan
-
-    if (Test-Path $SettingsPath) {
-        $obj = Read-Settings $SettingsPath
-        $removed = $false
-        if (Has-Prop $obj "env") {
-            Backup-Settings $SettingsPath
-            foreach ($k in @($VAR_CTX, $VAR_NOCMP)) {
-                if (Has-Prop $obj.env $k) {
-                    $obj.env.PSObject.Properties.Remove($k)
-                    Write-Host "[OK] 已从 settings.json 删除 $k。" -ForegroundColor Green
-                    $removed = $true
-                }
-            }
-            if ($removed) {
-                $json = $obj | ConvertTo-Json -Depth 10
-                Write-JsonFile -Path $SettingsPath -Content $json
-            } else {
-                Write-Host "[--] settings.json 里本就没有这两个键。" -ForegroundColor DarkGray
-            }
-        } else {
-            Write-Host "[--] settings.json 无 env 块, 无需处理。" -ForegroundColor DarkGray
-        }
-    } else {
-        Write-Host "[--] settings.json 不存在, 无需处理。" -ForegroundColor DarkGray
-    }
-
+function Remove-UserEnvKeys {
     foreach ($k in @($VAR_CTX, $VAR_NOCMP)) {
         if (Get-UserEnv $k) {
             Set-UserEnv $k $null
@@ -221,11 +227,67 @@ function Action-Rollback {
             Write-Host "[--] 用户环境变量 $k 本就没设。" -ForegroundColor DarkGray
         }
     }
+}
 
+# ============================ 动作 / ACTIONS ============================
+
+function Action-Install {
     Write-Host ""
-    Write-Host "回滚完成。重开终端 / 完全退出并重开桌面版 后生效 (上下文会回到 200k)。" -ForegroundColor Yellow
-    Write-Host "Rollback done. Relaunch terminal / fully quit+reopen the desktop app (context reverts to 200k)." -ForegroundColor Yellow
-    Write-Host "提示 / NOTE: 回滚同时关闭了 DISABLE_COMPACT, auto-compact 会恢复。" -ForegroundColor DarkGray
+    Write-Host ">>> 解锁 1M 上下文 (两层都写) / Unlocking 1M context (both layers) ..." -ForegroundColor Cyan
+    Backup-Settings $SettingsPath
+    Write-SettingsKeys
+    Write-UserEnvKeys
+    Show-NextSteps
+    Show-Caveat
+}
+
+function Action-InstallSettings {
+    Write-Host ""
+    Write-Host ">>> 仅写 settings.json / Writing settings.json only ..." -ForegroundColor Cyan
+    Backup-Settings $SettingsPath
+    Write-SettingsKeys
+    Write-Host "[--] 跳过用户环境变量 (本次只改 settings.json)。" -ForegroundColor DarkGray
+    Write-Host "     User env vars skipped (settings.json only this run)." -ForegroundColor DarkGray
+    Show-NextSteps
+    Show-Caveat
+}
+
+function Action-InstallEnv {
+    Write-Host ""
+    Write-Host ">>> 仅写用户环境变量 / Writing user env vars only ..." -ForegroundColor Cyan
+    Write-Host "[--] 跳过 settings.json (本次只改用户环境变量)。" -ForegroundColor DarkGray
+    Write-Host "     settings.json skipped (user env vars only this run)." -ForegroundColor DarkGray
+    Write-UserEnvKeys
+    Show-NextSteps
+    Show-Caveat
+}
+
+function Action-Rollback {
+    Write-Host ""
+    Write-Host ">>> 回滚 (两层都撤) / Rolling back (both layers) ..." -ForegroundColor Cyan
+    if (Test-Path $SettingsPath) { Backup-Settings $SettingsPath }
+    [void](Remove-SettingsKeys)
+    Remove-UserEnvKeys
+    Show-RollbackTail
+}
+
+function Action-RollbackSettings {
+    Write-Host ""
+    Write-Host ">>> 回滚 settings.json / Rolling back settings.json ..." -ForegroundColor Cyan
+    if (Test-Path $SettingsPath) { Backup-Settings $SettingsPath }
+    [void](Remove-SettingsKeys)
+    Write-Host "[--] 跳过用户环境变量 (本次只回滚 settings.json)。" -ForegroundColor DarkGray
+    Write-Host "     User env vars left as-is (settings.json only this run)." -ForegroundColor DarkGray
+    Show-RollbackTail
+}
+
+function Action-RollbackEnv {
+    Write-Host ""
+    Write-Host ">>> 回滚用户环境变量 / Rolling back user env vars ..." -ForegroundColor Cyan
+    Write-Host "[--] 跳过 settings.json (本次只回滚用户环境变量)。" -ForegroundColor DarkGray
+    Write-Host "     settings.json left as-is (user env vars only this run)." -ForegroundColor DarkGray
+    Remove-UserEnvKeys
+    Show-RollbackTail
 }
 
 function Action-Status {
@@ -260,23 +322,39 @@ function Action-Status {
     $eCtx   = ($ueCtx)   -and ($ueCtx   -ne "0")
     $eNoCmp = ($ueNoCmp) -and (@("1","true","yes","on") -contains ([string]$ueNoCmp).ToLower())
 
-    # 任一层两个键齐全即可生效; settings.json 那层对桌面版最关键
     $settingsOk = $sCtx -and $sNoCmp
     $envOk      = $eCtx -and $eNoCmp
     $settingsPartial = ($sCtx -or $sNoCmp) -and (-not $settingsOk)
+    $envPartial      = ($eCtx -or $eNoCmp) -and (-not $envOk)
 
     Write-Host ""
+    # 判定 + 后果说明 (你回家看 README 的"普通话"版)
     if ($settingsOk -and $envOk) {
         Write-Host "判定 / VERDICT: 1M 已解锁 (两层都齐全) / ACTIVE (both layers, both keys)。" -ForegroundColor Green
+        Write-Host "    含义: 桌面版和从终端启动的 Claude 都应该解锁 1M。重启后看 /context 分母应是 1000.0k。" -ForegroundColor DarkGray
+        Write-Host "    Meaning: both desktop and terminal-launched Claude should be unlocked; /context should read 1000.0k after restart." -ForegroundColor DarkGray
     } elseif ($settingsOk) {
         Write-Host "判定 / VERDICT: 1M 已解锁 (settings.json 两键齐全, 对桌面版足够) / ACTIVE (settings.json)。" -ForegroundColor Green
+        Write-Host "    含义: 桌面版的 Claude 应已解锁; 终端启动的 Claude 没设 env, 但 settings.json 这一层 CLI 也会读, 通常照样生效。" -ForegroundColor DarkGray
+        Write-Host "    Meaning: desktop Claude should be unlocked; CLI also reads settings.json so it likely works too." -ForegroundColor DarkGray
     } elseif ($settingsPartial) {
         $miss = if (-not $sCtx) { $VAR_CTX } else { $VAR_NOCMP }
         Write-Host "判定 / VERDICT: settings.json 里缺一键 ($miss), 不会生效 (两键缺一不可) / INCOMPLETE — missing $miss。" -ForegroundColor Red
+        Write-Host "    含义: 缺一个键, 覆盖路径不会触发, 桌面版仍会被截回 200k。重跑 Install 即可。" -ForegroundColor DarkGray
+        Write-Host "    Meaning: missing one key; the override path won't trigger; desktop will stay at 200k. Re-run Install." -ForegroundColor DarkGray
     } elseif ($envOk) {
         Write-Host "判定 / VERDICT: 仅用户环境变量两键齐全; 桌面版可能不读, 建议补 settings.json / PARTIAL (env only)。" -ForegroundColor Yellow
+        Write-Host "    含义: 从终端启动的 Claude 应解锁; 桌面版多半不读用户环境变量, 仍可能是 200k。" -ForegroundColor DarkGray
+        Write-Host "    Meaning: terminal-launched Claude should be unlocked; the desktop app likely won't read user env vars, so it may still show 200k." -ForegroundColor DarkGray
+    } elseif ($envPartial) {
+        $emiss = if (-not $eCtx) { $VAR_CTX } else { $VAR_NOCMP }
+        Write-Host "判定 / VERDICT: 用户环境变量缺一键 ($emiss); 不会生效 / PARTIAL (env incomplete)。" -ForegroundColor Yellow
+        Write-Host "    含义: 终端那一层缺一个键, 覆盖路径不会触发。建议直接跑 Install (两层都写)。" -ForegroundColor DarkGray
+        Write-Host "    Meaning: env layer is missing a key; the override path won't trigger. Just run Install (both layers)." -ForegroundColor DarkGray
     } else {
         Write-Host "判定 / VERDICT: 未启用 / NOT enabled。" -ForegroundColor Red
+        Write-Host "    含义: 两层都没设, 1M 没有解锁, /context 分母会是 200.0k。运行 Install 即可。" -ForegroundColor DarkGray
+        Write-Host "    Meaning: neither layer is set; 1M is not unlocked; /context will show 200.0k. Run Install to fix." -ForegroundColor DarkGray
     }
     Write-Host "确认生效: 重启桌面版后看 /context 或左下角分母 — 1000.0k = 成功, 200.0k = 未生效。" -ForegroundColor DarkGray
 }
@@ -284,10 +362,12 @@ function Action-Status {
 function Show-NextSteps {
     Write-Host ""
     Write-Host "下一步 / NEXT STEPS:" -ForegroundColor Yellow
+    Write-Host "  即便本次只改了一层, 也建议两边都重启一次, 避免遗留进程拿到旧值。" -ForegroundColor Yellow
+    Write-Host "  Even if you only touched one layer this run, restart BOTH to avoid lingering stale processes." -ForegroundColor Yellow
     Write-Host "  桌面版:  托盘图标右键 -> 完全退出 (不是只关窗口), 再重新打开。" -ForegroundColor Yellow
     Write-Host "  Desktop: Tray icon -> Quit completely (not just close window), then reopen." -ForegroundColor Yellow
-    Write-Host "  CLI:     关掉当前终端, 新开一个再用 claude。" -ForegroundColor Yellow
-    Write-Host "           Close this terminal, open a NEW one, run claude." -ForegroundColor Yellow
+    Write-Host "  CLI:     关掉当前终端窗口, 新开一个再用 claude (所有终端最好都关一遍)。" -ForegroundColor Yellow
+    Write-Host "           Close this terminal (ideally close ALL of them), open a NEW one, run claude." -ForegroundColor Yellow
     Write-Host "  验证 / verify: 重开后看 /context 或左下角分母 — 1000.0k = 成功, 200.0k = 失败。" -ForegroundColor Yellow
 }
 
@@ -305,6 +385,13 @@ function Show-Caveat {
     Write-Host "  If it stays 200k, see README troubleshooting (try the literal \"true\" first)." -ForegroundColor DarkYellow
 }
 
+function Show-RollbackTail {
+    Write-Host ""
+    Write-Host "回滚完成。重开终端 / 完全退出并重开桌面版 后生效。" -ForegroundColor Yellow
+    Write-Host "Rollback done. Relaunch terminal / fully quit+reopen the desktop app to take effect." -ForegroundColor Yellow
+    Write-Host "提示 / NOTE: 回滚同时关闭了 DISABLE_COMPACT, auto-compact 会恢复 (仅对被回滚的那一层)。" -ForegroundColor DarkGray
+}
+
 # ============================ 菜单 / MENU ============================
 
 function Show-Menu {
@@ -315,20 +402,48 @@ function Show-Menu {
     Write-Host "==================================================" -ForegroundColor Cyan
     Write-Host " 配置文件 / config: $SettingsPath"
     Write-Host ""
-    Write-Host "  [1] Install   解锁 1M 上下文 / unlock the 1M context window"
-    Write-Host "  [2] Status    查看当前状态 / show current state"
-    Write-Host "  [3] Rollback  撤销 (回到 200k) / remove (revert to 200k)"
-    Write-Host "  [Q] Quit      退出"
+    Write-Host "  [1] Install (both)               两层都写 (推荐)"
+    Write-Host "      `-> 一键搞定, 桌面版和终端两边都解锁 1M"
+    Write-Host "      `-> One-click: unlock 1M for both desktop and terminal."
+    Write-Host ""
+    Write-Host "  [2] Install settings.json only   只写 settings.json"
+    Write-Host "      `-> 只让桌面版的 Claude 解锁 1M, 不动系统环境变量"
+    Write-Host "      `-> Unlock the desktop Claude only; leave system env vars alone."
+    Write-Host ""
+    Write-Host "  [3] Install user env vars only   只写用户环境变量"
+    Write-Host "      `-> 只让从终端启动的 Claude 解锁 1M, 不改配置文件"
+    Write-Host "      `-> Unlock terminal-launched Claude only; don't touch the config file."
+    Write-Host ""
+    Write-Host "  [4] Status                       查看当前状态"
+    Write-Host "      `-> 看现在是不是已经解锁, 没解锁缺哪个"
+    Write-Host "      `-> Check whether it's unlocked now and which key (if any) is missing."
+    Write-Host ""
+    Write-Host "  [5] Rollback (both)              两层都回滚 (回到 200k)"
+    Write-Host "      `-> 一键还原, 把所有改动撤掉, 回到默认 200k"
+    Write-Host "      `-> One-click revert: undo everything, back to the default 200k."
+    Write-Host ""
+    Write-Host "  [6] Rollback settings.json only  只回滚 settings.json"
+    Write-Host "      `-> 只撤掉对桌面版的解锁, 用户环境变量保留"
+    Write-Host "      `-> Undo the desktop unlock only; keep user env vars as they are."
+    Write-Host ""
+    Write-Host "  [7] Rollback user env vars only  只回滚用户环境变量"
+    Write-Host "      `-> 只撤掉对终端的解锁, 配置文件保留"
+    Write-Host "      `-> Undo the terminal unlock only; keep the config file as it is."
+    Write-Host ""
+    Write-Host "  [Q] Quit                         退出"
     Write-Host ""
 }
 
 # 非交互模式 / Non-interactive (AI agent) dispatch
-# 传了 -Action 就直接执行对应动作后退出, 不进菜单 (供 AGENTS.md / 自动化调用)
 if ($Action -ne "") {
     switch ($Action.ToLower()) {
-        "install"  { Action-Install }
-        "status"   { Action-Status }
-        "rollback" { Action-Rollback }
+        "install"           { Action-Install }
+        "install-settings"  { Action-InstallSettings }
+        "install-env"       { Action-InstallEnv }
+        "status"            { Action-Status }
+        "rollback"          { Action-Rollback }
+        "rollback-settings" { Action-RollbackSettings }
+        "rollback-env"      { Action-RollbackEnv }
     }
     exit 0
 }
@@ -339,8 +454,12 @@ while ($true) {
     $choice = (Read-Host "请选择 / Choose").Trim().ToUpper()
     switch ($choice) {
         "1" { Action-Install }
-        "2" { Action-Status }
-        "3" { Action-Rollback }
+        "2" { Action-InstallSettings }
+        "3" { Action-InstallEnv }
+        "4" { Action-Status }
+        "5" { Action-Rollback }
+        "6" { Action-RollbackSettings }
+        "7" { Action-RollbackEnv }
         "Q" { Write-Host "再见 / Bye."; break }
         default { Write-Host "无效选择 / invalid choice: $choice" -ForegroundColor Red }
     }

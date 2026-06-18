@@ -20,7 +20,7 @@ Restore the local Claude context limit from the gated 200k back to 1M by writing
 
 ### 第 1 步：安装 / Step 1: Install
 
-按操作系统选一条命令运行 / Run ONE command depending on the OS:
+**默认走两层（推荐）/ Default: both layers (recommended)** —— 除非用户明确说只想改一层：
 
 **Windows（PowerShell 或在 bash 里调 powershell.exe）:**
 ```
@@ -34,6 +34,22 @@ chmod +x install-mac-linux.sh && ./install-mac-linux.sh install
 
 这些是**非交互**命令，不需要任何键盘输入，直接执行完退出。
 These are **non-interactive** — no keyboard input needed; they run and exit.
+
+#### 细粒度动作（v1.1.0+）/ Fine-grained actions (v1.1.0+)
+
+如果用户明确说「只改 settings.json 不要动环境变量」或「只设环境变量不要动 settings.json」，用对应的细粒度动作：
+If the user explicitly asks to touch only one layer, use the matching action:
+
+| 用户意图 / Intent | Windows `-Action` | macOS/Linux 子命令 / subcommand |
+|---|---|---|
+| 两层都写（默认）/ Both layers (default) | `install` | `install` |
+| 只写 settings.json / Settings only | `install-settings` | `install-settings` |
+| 只写用户环境变量 / shell rc / Env only | `install-env` | `install-env` |
+| 两层都回滚 / Rollback both | `rollback` | `rollback` |
+| 只回滚 settings.json / Rollback settings only | `rollback-settings` | `rollback-settings` |
+| 只回滚环境变量 / shell rc / Rollback env only | `rollback-env` | `rollback-env` |
+
+不确定用户意图时**就用 `install`（两层都写）**；这是设计上的默认值。/ When in doubt, **use `install` (both layers)** — that's the design default.
 
 ### 第 2 步：验证配置 / Step 2: Verify config (REQUIRED)
 
@@ -71,7 +87,7 @@ On success, tell the user these **three points (all required, especially the sid
 
 ## 可选附注 / OPTIONAL NOTES
 
-- **回滚 / Rollback**：`... -Action rollback`（Windows）或 `./install-mac-linux.sh rollback`（Mac/Linux）。删除两个键并清环境变量、恢复 auto-compact，幂等。
+- **回滚 / Rollback**：`... -Action rollback`（Windows）或 `./install-mac-linux.sh rollback`（Mac/Linux）。删除两个键并清环境变量、恢复 auto-compact，幂等。v1.1.0 起还可以只回滚一层：`rollback-settings` / `rollback-env`。
 - **纯读取校验（需 Node.js）/ Read-only check (needs Node.js)**：`node check-1m-context.js` 报告两个键是否齐全（只查配置层，不联网）。
 - **若重启后仍是 200k**：见 [README.md](README.md) 的「失败排查」——常见原因是没真正重启、只设了一个键、客户端改用严格 bool 解析（把值改成 `"true"`）、或渠道本身无 1M 额度。
 - 更多说明见 [README.md](README.md)（中文）/ [README.en.md](README.en.md)（English）。

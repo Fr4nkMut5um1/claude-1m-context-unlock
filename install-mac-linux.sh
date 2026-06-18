@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================================
 #  Claude 1M Context Unlock  -  macOS / Linux installer
-#  v1.0.0
+#  v1.1.0
 #
 #  解除 Claude 桌面端把上下文强行截回 200k 的限制, 恢复模型本应有的 1M 上下文。
 #  Unlock the full 1M context window that the Claude desktop app silently caps to 200k.
@@ -13,6 +13,9 @@
 #      1) ~/.claude/settings.json 的 env 块 (启动时合并进 process.env, 桌面版/CLI 都生效)
 #      2) shell rc 追加 export 兜底 (仅覆盖终端启动的进程; 桌面版靠 settings.json 那层)
 #
+#    v1.1.0 新增: 细粒度选项, 你可以只写 settings.json 或只追加 shell rc.
+#    v1.1.0 adds fine-grained options: settings-only or shell-rc-only installs.
+#
 #  副作用 / SIDE EFFECT (重要 / important):
 #    DISABLE_COMPACT=1 会彻底关闭 auto-compact: 上下文满了不再自动总结, 需手动
 #    /compact 或开新会话。这是开启 1M 的必要代价。
@@ -22,7 +25,13 @@
 #    chmod +x install-mac-linux.sh
 #    ./install-mac-linux.sh
 #    非交互 / non-interactive (for AI agents):
-#      ./install-mac-linux.sh install      (or: status | rollback)
+#      ./install-mac-linux.sh install              (两层都写 / both layers)
+#      ./install-mac-linux.sh install-settings     (只写 settings.json)
+#      ./install-mac-linux.sh install-env          (只追加 shell rc)
+#      ./install-mac-linux.sh status
+#      ./install-mac-linux.sh rollback             (两层都撤)
+#      ./install-mac-linux.sh rollback-settings
+#      ./install-mac-linux.sh rollback-env
 #    测试 / testing:  CLAUDE_CONFIG_DIR=$(mktemp -d) ./install-mac-linux.sh
 #
 #  不需要 root, 不需要 Node.js。改 JSON 用 python3 (perl 兜底)。
@@ -31,7 +40,7 @@
 
 set -u
 
-VERSION="v1.0.0"
+VERSION="v1.1.0"
 VAR_CTX="CLAUDE_CODE_MAX_CONTEXT_TOKENS"
 VAR_NOCMP="DISABLE_COMPACT"
 VAL_CTX="1000000"
@@ -207,26 +216,32 @@ EOF
     fi
 }
 remove_rc() {
+    local touched=0
     while IFS= read -r rc; do
         [ -z "$rc" ] && continue
         if grep -q "$MARKER" "$rc" 2>/dev/null; then
-            # 删 marker 行 + 我们写的两条 export 行
             local tmp="${rc}.tmp.$$"
             grep -v "$MARKER" "$rc" | grep -v "export $VAR_CTX=" | grep -v "export $VAR_NOCMP=" > "$tmp" && mv "$tmp" "$rc"
             echo "[OK] 已从 $rc 清除。"
+            touched=1
         fi
     done <<EOF
 $(rc_files)
 EOF
+    if [ "$touched" = "0" ]; then
+        echo "[--] 没有在任何 shell rc 里找到本工具的 marker, 无需处理。"
+    fi
 }
 
 show_next_steps() {
     echo ""
     echo "下一步 / NEXT STEPS:"
+    echo "  即便本次只改了一层, 也建议两边都重启一次, 避免遗留进程读到旧值。"
+    echo "  Even if you only touched one layer, restart BOTH to avoid stale processes reading old values."
     echo "  桌面版:  完全退出 Claude 桌面版再重开 (它不读 shell rc, 靠 settings.json)。"
     echo "  Desktop: Fully quit & reopen the app (it reads settings.json, not shell rc)."
-    echo "  CLI:     source ~/.zshrc (或 ~/.bashrc), 或新开一个终端。"
-    echo "           source your rc file, or open a NEW terminal."
+    echo "  CLI:     source ~/.zshrc (或 ~/.bashrc), 或新开一个终端 (建议把开着的终端都关一遍)。"
+    echo "           source your rc file, or open a NEW terminal (close existing ones too if possible)."
     echo "  验证 / verify: 重开后看 /context 或左下角分母 — 1000.0k = 成功, 200.0k = 失败。"
 }
 show_caveat() {
@@ -242,6 +257,12 @@ show_caveat() {
     echo "  Also: success depends on your desktop build/channel supporting 1M; if it stays"
     echo "  200k, see README troubleshooting (try the literal \"true\" first)."
 }
+show_rollback_tail() {
+    echo ""
+    echo "回滚完成。source rc 或新开终端 / 完全退出并重开桌面版 后生效。"
+    echo "Rollback done. source your rc / relaunch terminal / fully quit+reopen the desktop app."
+    echo "提示 / NOTE: 回滚同时关闭了 DISABLE_COMPACT, auto-compact 会恢复 (仅对被回滚的那一层)。"
+}
 
 # --- 判断真值 (用于 DISABLE_COMPACT) / truthy check ---
 is_truthy() {  # value
@@ -253,26 +274,19 @@ is_truthy() {  # value
 
 # ============================ 动作 / ACTIONS ============================
 
-do_install() {
-    echo ""
-    echo ">>> 解锁 1M 上下文 / Unlocking 1M context ..."
+# 共用: 写两键到 settings.json (备份在外面做)
+write_settings_keys() {
     detect_json_tool
     ensure_file
     validate_json
-    backup_settings
     set_key "$VAR_CTX"   "$VAL_CTX"
     set_key "$VAR_NOCMP" "$VAL_NOCMP"
     echo "[OK] settings.json 已更新 / updated:"
     echo "       $VAR_CTX = $VAL_CTX"
     echo "       $VAR_NOCMP = $VAL_NOCMP"
-    append_rc
-    show_next_steps
-    show_caveat
 }
-
-do_rollback() {
-    echo ""
-    echo ">>> 回滚 / Rolling back ..."
+# 共用: 从 settings.json 删两键
+remove_settings_keys() {
     detect_json_tool
     if [ -f "$SETTINGS" ]; then
         validate_json
@@ -281,7 +295,6 @@ do_rollback() {
             if [ -n "$(get_key "$k")" ]; then any=1; fi
         done
         if [ "$any" = "1" ]; then
-            backup_settings
             del_key "$VAR_CTX"
             del_key "$VAR_NOCMP"
             echo "[OK] 已从 settings.json 删除 $VAR_CTX 与 $VAR_NOCMP。"
@@ -291,10 +304,61 @@ do_rollback() {
     else
         echo "[--] settings.json 不存在。"
     fi
-    remove_rc
+}
+
+do_install() {
     echo ""
-    echo "回滚完成 (上下文回到 200k, auto-compact 恢复)。source rc 或新开终端 / 重启桌面版 后生效。"
-    echo "Rollback done (context reverts to 200k, auto-compact restored)."
+    echo ">>> 解锁 1M 上下文 (两层都写) / Unlocking 1M (both layers) ..."
+    backup_settings
+    write_settings_keys
+    append_rc
+    show_next_steps
+    show_caveat
+}
+do_install_settings() {
+    echo ""
+    echo ">>> 仅写 settings.json / Writing settings.json only ..."
+    backup_settings
+    write_settings_keys
+    echo "[--] 跳过 shell rc (本次只改 settings.json)。"
+    echo "     shell rc skipped (settings.json only this run)."
+    show_next_steps
+    show_caveat
+}
+do_install_env() {
+    echo ""
+    echo ">>> 仅追加 shell rc 的 export / Appending shell rc exports only ..."
+    echo "[--] 跳过 settings.json (本次只改 shell rc)。"
+    echo "     settings.json skipped (shell rc only this run)."
+    append_rc
+    show_next_steps
+    show_caveat
+}
+
+do_rollback() {
+    echo ""
+    echo ">>> 回滚 (两层都撤) / Rolling back (both layers) ..."
+    if [ -f "$SETTINGS" ]; then backup_settings; fi
+    remove_settings_keys
+    remove_rc
+    show_rollback_tail
+}
+do_rollback_settings() {
+    echo ""
+    echo ">>> 回滚 settings.json / Rolling back settings.json ..."
+    if [ -f "$SETTINGS" ]; then backup_settings; fi
+    remove_settings_keys
+    echo "[--] 跳过 shell rc (本次只回滚 settings.json)。"
+    echo "     shell rc left as-is (settings.json only this run)."
+    show_rollback_tail
+}
+do_rollback_env() {
+    echo ""
+    echo ">>> 回滚 shell rc 的 export / Rolling back shell rc exports ..."
+    echo "[--] 跳过 settings.json (本次只回滚 shell rc)。"
+    echo "     settings.json left as-is (shell rc only this run)."
+    remove_rc
+    show_rollback_tail
 }
 
 do_status() {
@@ -311,35 +375,62 @@ do_status() {
         sCtx=""; sNoCmp=""
     fi
     echo ""
+    echo "--- shell rc 是否含本工具 marker / shell rc has marker? ---"
+    local rc_hit=0
+    while IFS= read -r rc; do
+        [ -z "$rc" ] && continue
+        if grep -q "$MARKER" "$rc" 2>/dev/null; then
+            echo "  [Y] $rc"
+            rc_hit=1
+        fi
+    done <<EOF
+$(rc_files)
+EOF
+    [ "$rc_hit" = "0" ] && echo "  (没找到 / not found in any rc)"
+    echo ""
     echo "--- 当前 shell 环境 / current shell env ---"
     echo "  $VAR_CTX = ${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-(未设/not set)}"
     echo "  $VAR_NOCMP = ${DISABLE_COMPACT:-(未设/not set)}"
-    echo "  (注: 这只反映当前终端; 桌面版以 settings.json 为准)"
+    echo "  (注: 这反映的是当前终端; 桌面版以 settings.json 为准)"
     echo ""
     local ctx_ok=0 nocmp_ok=0
     [ -n "$sCtx" ] && [ "$sCtx" != "0" ] && ctx_ok=1
     is_truthy "$sNoCmp" && nocmp_ok=1
     if [ "$ctx_ok" = "1" ] && [ "$nocmp_ok" = "1" ]; then
         echo "判定 / VERDICT: settings.json 两键齐全, 1M 已解锁 / ACTIVE。"
+        echo "    含义: 桌面版应已解锁; CLI 也会读 settings.json, 通常照样生效。"
+        echo "    Meaning: desktop should be unlocked; CLI reads settings.json too, so it likely works too."
     elif [ "$ctx_ok" = "1" ] || [ "$nocmp_ok" = "1" ]; then
         if [ "$ctx_ok" = "0" ]; then miss="$VAR_CTX"; else miss="$VAR_NOCMP"; fi
         echo "判定 / VERDICT: settings.json 缺一键 ($miss), 不会生效 (两键缺一不可) / INCOMPLETE — missing $miss。"
+        echo "    含义: 缺一个键, 覆盖路径不会触发, 桌面版仍会被截回 200k。重跑 Install 即可。"
+        echo "    Meaning: missing one key; the override path won't trigger; desktop will stay at 200k. Re-run Install."
     else
-        echo "判定 / VERDICT: settings.json 未启用 / NOT enabled。"
+        if [ "$rc_hit" = "1" ]; then
+            echo "判定 / VERDICT: settings.json 未启用, 但 shell rc 已写 / PARTIAL (shell rc only)。"
+            echo "    含义: 从终端启动的 Claude 应解锁; 桌面版不读 shell rc, 仍会是 200k。建议补 settings.json。"
+            echo "    Meaning: terminal-launched Claude should be unlocked; the desktop app doesn't read shell rc, so it will stay at 200k. Add settings.json too."
+        else
+            echo "判定 / VERDICT: 未启用 / NOT enabled。"
+            echo "    含义: 两层都没设, 1M 没有解锁, /context 分母会是 200.0k。运行 Install 即可。"
+            echo "    Meaning: neither layer is set; 1M is not unlocked; /context will show 200.0k. Run Install to fix."
+        fi
     fi
     echo "确认生效: 重启桌面版后看 /context 或左下角分母 — 1000.0k = 成功, 200.0k = 未生效。"
 }
 
 # 非交互模式 / Non-interactive (AI agent) dispatch
-# 传了参数就直接执行对应动作后退出, 不进菜单 (供 AGENTS.md / 自动化调用)
-# 用法 / usage: ./install-mac-linux.sh [install|status|rollback]
 if [ $# -gt 0 ]; then
     case "$1" in
-        install)  do_install  ;;
-        status)   do_status   ;;
-        rollback) do_rollback ;;
+        install)            do_install            ;;
+        install-settings)   do_install_settings   ;;
+        install-env)        do_install_env        ;;
+        status)             do_status             ;;
+        rollback)           do_rollback           ;;
+        rollback-settings)  do_rollback_settings  ;;
+        rollback-env)       do_rollback_env       ;;
         *) echo "[ERROR] 未知动作 / Unknown action: $1" >&2
-           echo "Usage: $0 [install|status|rollback]" >&2
+           echo "Usage: $0 [install|install-settings|install-env|status|rollback|rollback-settings|rollback-env]" >&2
            exit 1 ;;
     esac
     exit 0
@@ -353,10 +444,35 @@ menu() {
     echo "=================================================="
     echo " 配置文件 / config: $SETTINGS"
     echo ""
-    echo "  1) Install   解锁 1M 上下文 / unlock the 1M context window"
-    echo "  2) Status    查看状态 / show current state"
-    echo "  3) Rollback  撤销 (回到 200k) / remove (revert to 200k)"
-    echo "  q) Quit      退出"
+    echo "  1) Install (both)               两层都写 (推荐)"
+    echo "     -> 一键搞定, 桌面版和终端两边都解锁 1M"
+    echo "     -> One-click: unlock 1M for both desktop and terminal."
+    echo ""
+    echo "  2) Install settings.json only   只写 settings.json"
+    echo "     -> 只让桌面版的 Claude 解锁 1M, 不动你的 shell rc"
+    echo "     -> Unlock the desktop Claude only; leave your shell rc alone."
+    echo ""
+    echo "  3) Install shell rc only        只追加 shell rc 的 export"
+    echo "     -> 只让从终端启动的 Claude 解锁 1M, 不改配置文件"
+    echo "     -> Unlock terminal-launched Claude only; don't touch the config file."
+    echo ""
+    echo "  4) Status                       查看当前状态"
+    echo "     -> 看现在是不是已经解锁, 没解锁缺哪个"
+    echo "     -> Check whether it's unlocked now and which key (if any) is missing."
+    echo ""
+    echo "  5) Rollback (both)              两层都回滚 (回到 200k)"
+    echo "     -> 一键还原, 把所有改动撤掉, 回到默认 200k"
+    echo "     -> One-click revert: undo everything, back to the default 200k."
+    echo ""
+    echo "  6) Rollback settings.json only  只回滚 settings.json"
+    echo "     -> 只撤掉对桌面版的解锁, shell rc 保留"
+    echo "     -> Undo the desktop unlock only; keep shell rc as it is."
+    echo ""
+    echo "  7) Rollback shell rc only       只回滚 shell rc"
+    echo "     -> 只撤掉对终端的解锁, 配置文件保留"
+    echo "     -> Undo the terminal unlock only; keep the config file as it is."
+    echo ""
+    echo "  q) Quit                         退出"
     echo ""
 }
 
@@ -366,8 +482,12 @@ while true; do
     read -r choice || break
     case "$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')" in
         1) do_install ;;
-        2) do_status ;;
-        3) do_rollback ;;
+        2) do_install_settings ;;
+        3) do_install_env ;;
+        4) do_status ;;
+        5) do_rollback ;;
+        6) do_rollback_settings ;;
+        7) do_rollback_env ;;
         q) echo "再见 / Bye."; break ;;
         *) echo "无效选择 / invalid choice: $choice" ;;
     esac

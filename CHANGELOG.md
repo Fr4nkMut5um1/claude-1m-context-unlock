@@ -4,6 +4,20 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [SemVer](https://semver.org/)。
 
+## [1.1.0] - 2026-06-18
+
+### Added
+- 细粒度安装/回滚：新增 4 个动作 —— `install-settings`（只写 settings.json）、`install-env`（只写用户环境变量 / 只追加 shell rc）、`rollback-settings`、`rollback-env`。菜单（1-7）与非交互 `-Action` / 子命令同时支持。/ Fine-grained install/rollback: added `install-settings` / `install-env` / `rollback-settings` / `rollback-env`. Available both in the menu (1-7) and as non-interactive actions/subcommands.
+- 菜单条目增加白话副文案：每个动作下方多一行"普通话"解释，告诉用户这一项实际会让"桌面版 Claude" / "终端 Claude" 发生什么。/ Each menu item now has a plain-English sub-line explaining what it actually does to "desktop Claude" or "terminal Claude".
+- Status 判定增加"含义"行：在原有 VERDICT 之后再说一句话讲清楚"现在这个状态意味着什么 / 接下来应该做什么"。/ Status verdicts now include a follow-up line describing what the current state means and what to do next.
+
+### Changed
+- 重启提示统一加强：无论本次只改了哪一层，都会建议你把桌面版和终端两边都重启一次，避免遗留进程读到旧值。/ Restart guidance is now unified: regardless of which layer was touched, the tool tells you to restart BOTH desktop and terminals so no stale process holds the old values.
+- 副作用提示策略：只要本次动作真的写入了 `DISABLE_COMPACT=1`（任意 Install 路径），就显示 auto-compact 副作用提示；纯 Status / Rollback 不再唠叨。/ Caveat display policy: shown whenever `DISABLE_COMPACT=1` is actually written by this run (any of the three Install paths); not repeated on Status/Rollback.
+- 版本号 v1.0.0 → v1.1.0。/ Version bump v1.0.0 → v1.1.0.
+
+[1.1.0]: https://github.com/Angelica-Lin/claude-1m-context-unlock/releases/tag/v1.1.0
+
 ## [1.0.0] - 2026-06-18
 
 ### Added

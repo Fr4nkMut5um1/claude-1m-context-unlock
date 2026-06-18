@@ -111,6 +111,22 @@ Then type `1`. JSON is edited with the system `python3` (falls back to `perl` if
 
 ---
 
+## Fine-grained install (v1.1.0+, advanced)
+
+If you'd rather **not touch both layers** — e.g. you don't want to pollute user env vars, your `settings.json` lives on a synced drive, or company policy forbids changing user env — v1.1.0 adds finer options to the menu:
+
+| Option | Touches | Affects | Use when |
+|---|---|---|---|
+| `1) Install (both)` | settings.json **+** user env vars / shell rc | Desktop + terminal | **Default, recommended** — belt and suspenders |
+| `2) Install settings.json only` | settings.json only | Desktop (CLI usually reads it too) | Don't want to touch user env |
+| `3) Install user env vars only` (Windows)<br>`3) Install shell rc only` (Mac/Linux) | User env vars / shell rc only | Terminal-launched Claude only | Don't want to touch settings.json |
+
+Rollback mirrors this (`5/6/7`). Non-interactive: `-Action install-settings` / `install-env` / `rollback-settings` / `rollback-env` (Windows), or the same names as subcommands (Mac/Linux).
+
+**Option 1 is still recommended** unless you have a specific reason to pick another.
+
+---
+
 ## Verify
 
 **Option A (most direct, the only truly reliable check):**
@@ -128,7 +144,9 @@ A standalone read-only script: `node check-1m-context.js` reports whether both k
 
 ## Rollback
 
-Run the installer → choose `3) Rollback`. It removes both keys from `settings.json` and clears the matching user env vars / shell rc lines (**and restores auto-compact**). Every write is preceded by an automatic backup `settings.json.bak.<timestamp>`.
+Run the installer → choose `5) Rollback (both)`. It removes both keys from `settings.json` and clears the matching user env vars / shell rc lines (**and restores auto-compact**). Every write is preceded by an automatic backup `settings.json.bak.<timestamp>`.
+
+Want to undo only one layer? Pick `6) Rollback settings.json only` or `7) Rollback user env vars only` (Mac/Linux: `Rollback shell rc only`).
 
 ---
 
@@ -211,6 +229,7 @@ When the CLI connects directly to the official API/channel, 1M usually works via
 
 ## Changelog
 
+- **v1.1.0** (2026-06-18) — Fine-grained install/rollback (settings-only / env-only), plain-English sub-lines on every menu item, Status verdicts now include a "what this means" follow-up, unified restart guidance. See [CHANGELOG](CHANGELOG.md).
 - **v1.0.0** (2026-06-18) — Initial release. Windows (`.bat`+`.ps1`), macOS/Linux (`.sh`, python3 primary + perl fallback), optional Node read-only check, separate CN/EN READMEs, AI-agent auto-install instructions.
 
 References:
