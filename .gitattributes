@@ -7,3 +7,7 @@
 *.md text eol=lf
 *.json text eol=lf
 *.js text eol=lf
+
+# 图片二进制
+*.jpg binary
+*.png binary

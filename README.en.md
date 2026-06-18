@@ -1,6 +1,10 @@
 # Claude 1M Context Unlock · one-click bypass of the desktop 200k context cap
 
 <p align="center">
+  <img src="assets/banner.jpg" alt="Claude 1M Context Unlock" width="180">
+</p>
+
+<p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/github/license/Angelica-Lin/claude-1m-context-unlock?color=blue" alt="License"></a>
   <a href="https://github.com/Angelica-Lin/claude-1m-context-unlock/releases/latest"><img src="https://img.shields.io/github/v/release/Angelica-Lin/claude-1m-context-unlock" alt="Release"></a>
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" alt="Platform">
@@ -190,6 +194,7 @@ When the CLI connects directly to the official API/channel, 1M usually works via
 | `README.en.md` | This file (English) |
 | `README.md` | Chinese version |
 | `CHANGELOG.md` | Version history |
+| `assets/banner.jpg` | Banner image |
 
 ---
 

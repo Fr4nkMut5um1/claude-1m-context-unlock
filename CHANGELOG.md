@@ -18,6 +18,7 @@
 - `AGENTS.md`：AI agent 自动安装指令（含必说的副作用与 `/context` 验证）。
 - `check-1m-context.js`：可选 Node 纯读取校验（不联网）。
 - `example-settings.json`：脱敏示例。
+- `assets/banner.jpg`：展示图。
 - MIT License。
 
 [1.0.0]: https://github.com/Angelica-Lin/claude-1m-context-unlock/releases/tag/v1.0.0
