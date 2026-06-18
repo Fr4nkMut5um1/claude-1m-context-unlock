@@ -1,7 +1,7 @@
 ﻿<#
 ================================================================================
  Claude 1M Context Unlock  -  Windows installer (PowerShell 5.1+)
- v1.1.0
+ v1.1.1
 
  解除 Claude 桌面端把上下文强行截回 200k 的限制, 恢复模型本应有的 1M 上下文。
  Unlock the full 1M context window that the Claude desktop app silently caps to 200k.
@@ -60,7 +60,7 @@ param(
     [string]$Action = ""
 )
 
-$VERSION   = "v1.1.0"
+$VERSION   = "v1.1.1"
 $VAR_CTX   = "CLAUDE_CODE_MAX_CONTEXT_TOKENS"
 $VAR_NOCMP = "DISABLE_COMPACT"
 $VAL_CTX   = "1000000"
@@ -380,9 +380,9 @@ function Show-Caveat {
     Write-Host "  When context fills up it won't auto-summarize; run /compact or start fresh." -ForegroundColor DarkYellow
     Write-Host ""
     Write-Host "  另外: 能否解锁取决于你的桌面版版本与渠道是否真支持 1M。若分母仍是 200k," -ForegroundColor DarkYellow
-    Write-Host "  见 README 的「失败排查」(可先把两个值都改成 \"true\" 再试)。" -ForegroundColor DarkYellow
+    Write-Host "  见 README 的「失败排查」(可先把两个值都改成 `"true`" 再试)。" -ForegroundColor DarkYellow
     Write-Host "  Also: success depends on your desktop build/channel actually supporting 1M." -ForegroundColor DarkYellow
-    Write-Host "  If it stays 200k, see README troubleshooting (try the literal \"true\" first)." -ForegroundColor DarkYellow
+    Write-Host "  If it stays 200k, see README troubleshooting (try the literal `"true`" first)." -ForegroundColor DarkYellow
 }
 
 function Show-RollbackTail {

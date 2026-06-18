@@ -4,6 +4,13 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [SemVer](https://semver.org/)。
 
+## [1.1.1] - 2026-06-18
+
+### Fixed
+- PowerShell 字符串转义瑕疵：`Show-Caveat` 里的提示文案显示成 `\"true\"`（带字面反斜杠），现在干净显示为 `"true"`。/ PowerShell escape glitch in `Show-Caveat` that showed `\"true\"` with literal backslashes; now displays cleanly as `"true"`.
+
+[1.1.1]: https://github.com/Angelica-Lin/claude-1m-context-unlock/releases/tag/v1.1.1
+
 ## [1.1.0] - 2026-06-18
 
 ### Added
