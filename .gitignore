@@ -1,0 +1,4 @@
+# 打包产物走 GitHub Release，不进 git 历史
+*.zip
+# 用户运行时产生的备份
+settings.json.bak.*

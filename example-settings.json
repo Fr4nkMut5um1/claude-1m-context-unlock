@@ -1,0 +1,9 @@
+{
+  "_comment": "示例 / EXAMPLE ONLY. 展示解锁 1M 所需的 env 块该长什么样。不要直接拿去用 —— 把占位符换成你自己的值, 或者直接用安装器自动改你现有的 settings.json。 Shows the env block needed to unlock 1M context. Do NOT use as-is; replace placeholders, or just run the installer which edits your real settings.json safely. 两个键缺一不可 / both keys are required.",
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://your-upstream-here.example.com",
+    "ANTHROPIC_AUTH_TOKEN": "YOUR_TOKEN_HERE",
+    "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "1000000",
+    "DISABLE_COMPACT": "1"
+  }
+}

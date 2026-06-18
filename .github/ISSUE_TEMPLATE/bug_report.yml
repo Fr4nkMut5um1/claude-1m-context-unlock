@@ -1,0 +1,89 @@
+name: Bug 报告 / Bug report
+description: 安装或使用中遇到问题 / Something went wrong installing or using the toolkit
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！请尽量填全下面的信息，能帮我更快定位。
+        Thanks! Filling in the details below helps a lot.
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: 操作系统 / Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+
+  - type: dropdown
+    id: how
+    attributes:
+      label: 怎么运行的 / How did you run it
+      options:
+        - 双击 install-windows.bat / Double-clicked install-windows.bat
+        - PowerShell 命令 / PowerShell command
+        - ./install-mac-linux.sh（菜单 / menu）
+        - 非交互子命令 / non-interactive (-Action / install ...)
+        - 让 AI agent 按 AGENTS.md 自动装 / via AI agent + AGENTS.md
+    validations:
+      required: true
+
+  - type: dropdown
+    id: symptom
+    attributes:
+      label: 现象 / Symptom
+      options:
+        - 重启后 /context 分母仍是 200k / Still 200k after restart
+        - 安装器报错 / Installer errored out
+        - Status 显示 INCOMPLETE 或 NOT enabled
+        - auto-compact 相关疑问 / Question about auto-compact being off
+        - 其它 / Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么 / What happened
+      description: 你做了什么、期望什么、实际看到什么（含重启后 /context 分母）。/ What you did, expected, and actually saw (including the /context denominator after restart).
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: 完整报错 / 输出 / Full error or output
+      description: 把终端里看到的内容原样贴上（**先删掉里面的 token/密钥**）。/ Paste the terminal output verbatim (**remove any token/secret first**).
+      render: shell
+
+  - type: input
+    id: status-verdict
+    attributes:
+      label: Status 的 VERDICT 行 / The VERDICT line from Status
+      description: "运行安装器选 2) Status, 把那行 VERDICT 贴上来。/ Run the installer, choose 2) Status, paste the VERDICT line."
+
+  - type: input
+    id: cc-version
+    attributes:
+      label: Claude 桌面版 / CLI 版本 / desktop or CLI version
+      description: "桌面版的版本号, 或 `claude --version` 的结果。/ The desktop app version, or output of `claude --version`."
+
+  - type: input
+    id: upstream
+    attributes:
+      label: 上游类型 / Upstream
+      description: "官方 API / Bedrock / Vertex / 第三方中转站（**不要贴 token 或真实地址**）。/ Official API / Bedrock / Vertex / a third-party relay (**do NOT paste tokens or real URLs**)."
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 确认 / Confirm
+      options:
+        - label: 我已删除粘贴内容里的任何 token / 密钥。/ I removed any token/secret from what I pasted.
+          required: true
+        - label: 我已完全退出并重开桌面版（不是只关窗口）。/ I fully quit & reopened the desktop app (not just closed the window).
+          required: true
